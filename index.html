@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Roboflow Demo</title>
+    <meta name="viewport" content="width=640, user-scalable=no" />
+
+    <!-- Dependencias -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/roslibjs/1.1.0/roslib.min.js"
+        integrity="sha512-x2Owc9WayRcRj80Znkau58shVfXN2OIX+gQAlrx6KPugZBKrIC6AwgEWQQCI06p2Q8RB4ilxD+y+1BdNd+1fQA=="
+        crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"
+        integrity="sha512-bLT0Qm9VnAYZDflyKcBaQ2gg0hSYNQrJ8RilYldYQ1FxQYoCLtUjuuRuZo+fjqhx/qtq/1itJ0C2ejDxltZVFg=="
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/inferencejs"></script>
+
+    <style>
+        body.loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+
+        #object-count {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        canvas {
+            display: block;
+            margin: auto;
+            border: 1px solid black;
+        }
+    </style>
+</head>
+
+<body class="loading">
+    <canvas id="canvas"></canvas>
+    <div id="object-count">Objetos detectados: 0</div>
+
+    <script>
+        $(function () {
+            const { InferenceEngine, CVImage } = inferencejs;
+            const inferEngine = new InferenceEngine();
+            let workerId;
+
+            // Configuración de ROS
+            const ros = new ROSLIB.Ros({
+                url: "ws://zombieduck.local:9001" // Cambia la URL según sea necesario
+            });
+
+            ros.on("connection", () => console.log("Conectado a ROS"));
+            ros.on("error", (error) => console.error("Error en ROS:", error));
+            ros.on("close", () => console.warn("Conexión a ROS cerrada"));
+
+            const cameraTopic = new ROSLIB.Topic({
+                ros,
+                name: "/zombieduck/camera_node/image/compressed",
+                messageType: "sensor_msgs/CompressedImage",
+            });
+
+            // Cargar el modelo de inferencia
+            const loadModelPromise = inferEngine
+                .startWorker("obj_det_duckietown-m0vdj", "3", "rf_Jy6MyK2DjSSWGvJXrK45cOzXext1")
+                .then((id) => {
+                    workerId = id;
+                    console.log("Modelo cargado. Worker ID:", workerId);
+                })
+                .catch((error) => {
+                    console.error("Error al cargar el modelo:", error);
+                });
+
+            const canvas = document.getElementById("canvas");
+            const ctx = canvas.getContext("2d");
+            const font = "16px sans-serif";
+            let previousObjectCount = 0;
+            let processingFrame = false;
+
+            const resizeCanvas = (width, height) => {
+                canvas.width = width;
+                canvas.height = height;
+                canvas.style.width = "100%";
+                canvas.style.height = "auto";
+            };
+
+            const renderPredictions = (predictions) => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                const objectCount = predictions.length;
+                $("#object-count").text(`Objetos detectados: ${objectCount}`);
+
+                predictions.forEach(({ bbox, class: label, color }) => {
+                    const { x, y, width, height } = bbox;
+                    ctx.strokeStyle = color || "#FF0000";
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x - width / 2, y - height / 2, width, height);
+                    ctx.fillStyle = color || "#00FF00";
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                    ctx.fillStyle = "#000000";
+                    const textWidth = ctx.measureText(label).width;
+                    const textHeight = parseInt(font, 10);
+                    ctx.fillRect(x - width / 2, y - height / 2 - textHeight - 4, textWidth + 8, textHeight + 4);
+                    ctx.fillStyle = "#FFFFFF";
+                    ctx.font = font;
+                    ctx.fillText(label, x - width / 2 + 4, y - height / 2 - 4);
+                });
+            };
+
+            const processInference = (cvImage) => {
+                inferEngine
+                    .infer(workerId, cvImage)
+                    .then(renderPredictions)
+                    .catch((error) => console.error("Error durante la inferencia:", error));
+            };
+
+            const processFrame = (imageMessage) => {
+                if (processingFrame) return; // Evita procesar múltiples cuadros a la vez
+                processingFrame = true;
+
+                const image = new Image();
+                image.src = "data:image/jpeg;base64," + imageMessage.data;
+
+                image.onload = () => {
+                    resizeCanvas(image.width, image.height);
+                    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+                    const cvImage = new CVImage(image);
+                    processInference(cvImage);
+                    processingFrame = false; // Permite procesar el siguiente cuadro
+                };
+
+                image.onerror = () => {
+                    console.error("Error al cargar la imagen");
+                    processingFrame = false; // Permite procesar el siguiente cuadro
+                };
+            };
+
+            // Inicializar todo
+            loadModelPromise
+                .then(() => {
+                    $("body").removeClass("loading");
+                    cameraTopic.subscribe(processFrame);
+                })
+                .catch((error) => console.error("Error inicializando:", error));
+        });
+    </script>
+</body>
+
+</html>
