@@ -92,30 +92,51 @@
             };
 
             const renderPredictions = (predictions) => {
+                // Clear the canvas
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+                // Update the object count display
                 const objectCount = predictions.length;
-                $("#object-count").text(`Objetos detectados: ${objectCount}`);
+                $("#object-count").text(`Ducks detectados: ${objectCount}`);
+
+                // Define styles
+                const highlightColor = "#FFD700"; // Gold for visibility
+                const textBackgroundColor = "rgba(0, 0, 0, 0.7)"; // Semi-transparent black
+                const textColor = "#FFFFFF"; // White text
+                const pointColor = "#FF4500"; // OrangeRed for the center point
+                const font = "16px Arial"; // Font style for labels
 
                 predictions.forEach(({ bbox, class: label, color }) => {
                     const { x, y, width, height } = bbox;
-                    ctx.strokeStyle = color || "#FF0000";
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(x - width / 2, y - height / 2, width, height);
-                    ctx.fillStyle = color || "#00FF00";
-                    ctx.beginPath();
-                    ctx.arc(x, y, 5, 0, 2 * Math.PI);
-                    ctx.fill();
+                    const duckLabel = "Duck"; // Standard label for detected objects
 
-                    ctx.fillStyle = "#000000";
-                    const textWidth = ctx.measureText(label).width;
-                    const textHeight = parseInt(font, 10);
-                    ctx.fillRect(x - width / 2, y - height / 2 - textHeight - 4, textWidth + 8, textHeight + 4);
-                    ctx.fillStyle = "#FFFFFF";
+                    // Draw bounding box
+                    ctx.strokeStyle = color || highlightColor;
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x - width / 2, y - height / 2, width, height);
+
+                    // Add label with background
                     ctx.font = font;
-                    ctx.fillText(label, x - width / 2 + 4, y - height / 2 - 4);
+                    const textWidth = ctx.measureText(duckLabel).width;
+                    const textHeight = 16; // Approximate height based on font size
+                    ctx.fillStyle = textBackgroundColor;
+                    ctx.fillRect(
+                        x - width / 2,
+                        y - height / 2 - textHeight - 6,
+                        textWidth + 10,
+                        textHeight + 6
+                    );
+
+                    // Draw label text
+                    ctx.fillStyle = textColor;
+                    ctx.fillText(
+                        duckLabel,
+                        x - width / 2 + 5,
+                        y - height / 2 - 8
+                    );
                 });
             };
+
 
             const processInference = (cvImage) => {
                 inferEngine
